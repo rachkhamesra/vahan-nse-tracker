@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
-"""Refresh the Dispatch vs Registration Monitor.
+"""Refresh the Vahan + NSE tracker.
 
-  python3 pipeline/refresh.py vahan                 # re-pull the last 4 months of Vahan registrations
-  python3 pipeline/refresh.py vahan --full          # re-pull every month since 2022-01
-  python3 pipeline/refresh.py dispatch 2026-11      # read November dispatches from NSE sales filings
-  python3 pipeline/refresh.py ev                    # electric two-wheeler registrations by maker (official VAHAN portal)
-  python3 pipeline/refresh.py ev --full             # ...re-pull every year since 2022
-  python3 pipeline/refresh.py build                 # write all datasets into index.html
-  python3 pipeline/refresh.py all 2026-11           # vahan + dispatch + build
+  python3 pipeline/refresh.py portal                # registrations from the official VAHAN dashboard (current year)
+  python3 pipeline/refresh.py portal --full         # ...every year since 2022
+  python3 pipeline/refresh.py dispatch 2026-11      # read a month's dispatches from NSE sales filings
+  python3 pipeline/refresh.py publish               # write data/registrations.json and data/dispatch.json for the page
+                                                    # (--only registrations | dispatch to write just one)
 
-Needs: python3, curl, and `pip install pypdf`.
-Registrations come from the vahan.ms API (VAHAN Dashboard, MoRTH). Dispatches come from the
-monthly sales filings each OEM makes on NSE (corporate-announcements API, then the PDF).
+Registrations come from the VAHAN dashboard itself (vahan.parivahan.gov.in), the government source, by driving the
+dashboard's own form. It resets connections from cloud servers, so `portal` has to run from an ordinary connection
+(see pipeline/mac/). Dispatches come from the monthly sales filings each company makes on NSE and can run anywhere.
+
+Needs: python3 and curl. Reading the NSE PDFs also needs `pip install pypdf`.
 """
 import argparse, datetime as dt, html as htmllib, json, os, re, subprocess, sys, time
 import http.cookiejar, urllib.parse, urllib.request
-from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DATA = os.path.join(HERE, "data")
+DATA = os.path.join(HERE, "data")            # working stores
+PUB = os.path.join(ROOT, "data")             # files the page loads
 CACHE = os.path.join(HERE, "cache")
-HTML = os.path.join(ROOT, "index.html")
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36"
-MONTHS3 = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
 
 # dashboard name -> NSE symbol, per segment. Honda, Kia, Toyota, Suzuki Motorcycle do not file on NSE.
 NSE = {
@@ -34,7 +32,6 @@ NSE = {
     # TVS 3W is left out: its releases state 3W volumes inconsistently and it is a small share of registrations.
     "3W": {"Bajaj": ["BAJAJ-AUTO"], "Mahindra": ["M%26M"]},
 }
-VAHAN_SEG = {"2W": "2W", "CAR": "CAR", "CV": "CV", "3W": "3W"}
 
 
 def curl(url, out=None, tries=3):
@@ -56,74 +53,6 @@ def load(name):
 def save(name, obj, **kw):
     with open(os.path.join(DATA, name), "w") as f:
         json.dump(obj, f, **kw)
-
-
-# ---------------------------------------------------------------- Vahan
-def vahan_month(seg, y, m):
-    u = f"https://vahan.ms/api/share?level=IN&segment={seg}&fuel=ALL&dim=Maker&power=ALL&year={y}&span=month&month={m}&top=25"
-    r = json.loads(curl(u))
-    return r["total"], {x["oem"]: x["qty"] for x in r.get("rows", [])}, r["selection"].get("partial", False)
-
-
-def cmd_vahan(args):
-    v = load("vahan.json")
-    meta = json.loads(curl("https://vahan.ms/api/meta"))
-    last_rev = dt.date.fromisoformat(meta["last_revision"]["date"])
-    today_month = (last_rev.year, last_rev.month)
-    start = (2022, 1)
-    months = []
-    y, m = start
-    while (y, m) <= today_month:
-        months.append(f"{y}-{m:02d}")
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    # Vahan restates recent months, so by default refetch only the last 4.
-    fetch = months if args.full or v["months"][:1] != months[:1] else months[-4:]
-    fetch = [x for x in months if x in fetch]
-    # drop a barely started month: a few days of data would make the page's projection meaningless
-    partial_days = last_rev.day
-    hold = partial_days < args.min_days
-    jobs = [(s, mm) for s in VAHAN_SEG for mm in fetch]
-
-    def one(j):
-        s, mm = j
-        y, m = map(int, mm.split("-"))
-        return j, vahan_month(VAHAN_SEG[s], y, m)
-
-    with ThreadPoolExecutor(6) as ex:
-        res = dict(ex.map(one, jobs))
-    # extend / overwrite arrays
-    allm = months
-    for s in VAHAN_SEG:
-        names = [k for k in v[s] if k != "T"]
-        old = dict(zip(v["months"], v[s]["T"]))
-        olds = {n: dict(zip(v["months"], v[s][n])) for n in names}
-        for mm in fetch:
-            tot, oems, _ = res[(s, mm)]
-            old[mm] = tot
-            for n in names:
-                olds[n][mm] = oems.get(n, 0)
-        v[s]["T"] = [old.get(mm, 0) for mm in allm]
-        for n in names:
-            v[s][n] = [olds[n].get(mm, 0) for mm in allm]
-    v["months"] = allm
-    if hold:
-        # keep the in-progress month out of the page until it has enough days
-        print(f"latest Vahan month {allm[-1]} has only {partial_days} days; holding it back (--min-days {args.min_days}).")
-        for s in VAHAN_SEG:
-            for k in v[s]:
-                v[s][k] = v[s][k][:-1]
-        v["months"] = allm[:-1]
-        v["as_of"] = {"days_done": cal_days(allm[-2]), "days_in_month": cal_days(allm[-2])}
-    else:
-        v["as_of"] = {"days_done": partial_days if last_rev.month == int(allm[-1][5:]) and last_rev.day < cal_days(allm[-1]) else cal_days(allm[-1]),
-                      "days_in_month": cal_days(allm[-1])}
-    save("vahan.json", v, separators=(",", ":"))
-    print("vahan.json:", v["months"][0], "to", v["months"][-1], v["as_of"])
-
-
-def cal_days(mm):
-    y, m = map(int, mm.split("-"))
-    return (dt.date(y + (m == 12), m % 12 + 1, 1) - dt.date(y, m, 1)).days
 
 
 # ---------------------------------------------------------------- NSE
@@ -293,24 +222,41 @@ def cmd_dispatch(args):
 
 
 
-# ---------------------------------------------------------------- Electric two-wheelers (official VAHAN portal)
-# vahan.ms publishes maker-by-fuel only once a year, so monthly EV registrations by maker come from the VAHAN
-# dashboard itself (vahan.parivahan.gov.in), the same source vahan.ms is built on.
+
+# ---------------------------------------------------------------- Registrations: the official VAHAN dashboard
 PORTAL = "https://vahan.parivahan.gov.in/vahan4dashboard/vahan/view/reportview.xhtml"
-EV_MAKERS = [  # display name, regex on the legal name VAHAN uses
-    ("TVS", r"^TVS MOTOR"), ("Bajaj", r"^BAJAJ AUTO"), ("Ather", r"^ATHER ENERGY"), ("Ola Electric", r"^OLA ELECTRIC"),
-    ("Hero MotoCorp", r"^HERO MOTOCORP"), ("Ampere", r"^(GREAVES ELECTRIC|AMPERE VEHICLES)"), ("BGauss", r"^BGAUSS"),
-    ("Okinawa", r"^OKINAWA"), ("Hero Electric", r"^HERO ELECTRIC"),
-]
-EV_CATEGORIES = ("2WIC", "2WN", "2WT")   # two-wheeler vehicle categories
-EV_FUELS = ("23", "4")                   # PURE EV, ELECTRIC(BOV)
+# Segments are defined with the dashboard's own filters. `cats` are Vehicle Category codes, `classes` Vehicle Class ids,
+# `fuels` Fuel ids (23 pure EV, 4 battery-operated). `makers` map a display name to a regex on the legal name VAHAN
+# uses; every other maker rolls into the segment total.
+SEGMENTS = {
+    "2W": {"cats": ("2WIC", "2WN", "2WT"), "makers": [
+        ("Hero MotoCorp", r"^HERO MOTOCORP"), ("TVS", r"^TVS MOTOR"), ("Bajaj", r"^BAJAJ AUTO"),
+        ("Royal Enfield", r"^(ROYAL-ENFIELD|EICHER MOTORS)"), ("Honda", r"^HONDA MOTORCYCLE"),
+        ("Suzuki", r"^SUZUKI MOTORCYCLE"), ("Yamaha", r"^INDIA YAMAHA")]},
+    "E2W": {"cats": ("2WIC", "2WN", "2WT"), "fuels": ("23", "4"), "makers": [
+        ("TVS", r"^TVS MOTOR"), ("Bajaj", r"^BAJAJ AUTO"), ("Ather", r"^ATHER ENERGY"), ("Ola Electric", r"^OLA ELECTRIC"),
+        ("Hero MotoCorp", r"^HERO MOTOCORP"), ("Ampere", r"^(GREAVES ELECTRIC|AMPERE VEHICLES)"), ("BGauss", r"^BGAUSS"),
+        ("River", r"^RIVER MOBILITY"), ("Okinawa", r"^OKINAWA"), ("Hero Electric", r"^HERO ELECTRIC")]},
+    # cars: Motor Car, Motor Cab, Maxi Cab
+    "CAR": {"classes": ("7", "71", "70"), "makers": [
+        ("Maruti Suzuki", r"^MARUTI SUZUKI"), ("Tata Motors", r"^(TATA MOTORS|TATA PASSENGER ELECTRIC)"),
+        ("Mahindra", r"^(MAHINDRA & MAHINDRA|MAHINDRA ELECTRIC AUTOMOBILE)"), ("Hyundai", r"^HYUNDAI MOTOR"),
+        ("Toyota", r"^TOYOTA KIRLOSKAR"), ("Kia", r"^KIA INDIA")]},
+    # commercial: Goods Carrier, Articulated Vehicle, Bus, School Bus, Educational Institution Bus, Omni Bus (both)
+    "CV": {"classes": ("59", "84", "73", "74", "75", "86", "23"), "makers": [
+        ("Tata Motors", r"^TATA MOTORS"), ("Mahindra", r"^(MAHINDRA & MAHINDRA|MAHINDRA LAST MILE)"),
+        ("Ashok Leyland", r"^ASHOK LEYLAND"), ("VECV", r"^VE COMMERCIAL")]},
+    "3W": {"cats": ("3WIC", "3WN", "3WT"), "makers": [
+        ("Bajaj", r"^BAJAJ AUTO"), ("Mahindra", r"^(MAHINDRA LAST MILE|MAHINDRA & MAHINDRA)"), ("TVS", r"^TVS MOTOR")]},
+}
+SEG_ORDER = ["2W", "E2W", "CAR", "CV", "3W"]
 
 
 class Portal:
     def __init__(self):
         cj = http.cookiejar.CookieJar()
         self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-        page = self.op.open(urllib.request.Request(PORTAL, headers={"User-Agent": UA}), timeout=20).read().decode()
+        page = self.op.open(urllib.request.Request(PORTAL, headers={"User-Agent": UA}), timeout=25).read().decode()
         self.vs = re.search(r'name="javax.faces.ViewState"[^>]*value="([^"]+)"', page).group(1)
 
     def post(self, data):
@@ -323,11 +269,11 @@ class Portal:
             self.vs = m.group(1)
         return r
 
-    def form(self, year, cats=(), fuels=()):
+    def form(self, year, cats=(), classes=(), fuels=()):
         d = [("masterLayout_formlogin", "masterLayout_formlogin"), ("xaxisVar_input", "Month Wise"), ("yaxisVar_input", "Maker"),
              ("selectedYear_input", str(year)), ("selectedYearType_input", "C"), ("j_idt34_input", "A"), ("j_idt43_input", "-1"),
              ("selectedRto_input", "-1"), ("javax.faces.ViewState", self.vs)]
-        return d + [("VhCatg", c) for c in cats] + [("fuel", f) for f in fuels]
+        return d + [("VhCatg", c) for c in cats] + [("VhClass", c) for c in classes] + [("fuel", f) for f in fuels]
 
 
 def portal_rows(r):
@@ -341,15 +287,15 @@ def portal_rows(r):
     return out
 
 
-def ev_year(year):
-    """Monthly EV two-wheeler registrations for every maker in a calendar year: {maker: [Jan, Feb, ...]}."""
+def portal_year(year, cats=(), classes=(), fuels=()):
+    """Monthly registrations for every maker in a calendar year under the given filters: {legal name: [Jan, Feb, ...]}."""
     p = Portal()
-    render = "VhCatg norms fuel VhClass combTablePnl groupingTable msg vhCatgPnl"
-    # the filter panel only takes effect after a first unfiltered query, then its own Refresh button
+    # the filter panel only takes effect after a first unfiltered query, then through its own Refresh button
     p.post([("javax.faces.partial.ajax", "true"), ("javax.faces.source", "j_idt75"), ("javax.faces.partial.execute", "@all"),
-            ("javax.faces.partial.render", render), ("j_idt75", "j_idt75")] + p.form(year))
+            ("javax.faces.partial.render", "VhCatg norms fuel VhClass combTablePnl groupingTable msg vhCatgPnl"),
+            ("j_idt75", "j_idt75")] + p.form(year))
     r = p.post([("javax.faces.partial.ajax", "true"), ("javax.faces.source", "j_idt80"), ("javax.faces.partial.execute", "@all"),
-                ("javax.faces.partial.render", "combTablePnl"), ("j_idt80", "j_idt80")] + p.form(year, EV_CATEGORIES, EV_FUELS))
+                ("javax.faces.partial.render", "combTablePnl"), ("j_idt80", "j_idt80")] + p.form(year, cats, classes, fuels))
     m = re.search(r"rowCount:(\d+)", r)
     n = int(m.group(1)) if m else 0
     rows = portal_rows(r)
@@ -359,7 +305,7 @@ def ev_year(year):
                 r = p.post([("javax.faces.partial.ajax", "true"), ("javax.faces.source", "groupingTable"),
                             ("javax.faces.partial.execute", "groupingTable"), ("javax.faces.partial.render", "groupingTable"),
                             ("groupingTable", "groupingTable"), ("groupingTable_pagination", "true"), ("groupingTable_first", str(first)),
-                            ("groupingTable_rows", "25"), ("groupingTable_encodeFeature", "true")] + p.form(year, EV_CATEGORIES, EV_FUELS))
+                            ("groupingTable_rows", "25"), ("groupingTable_encodeFeature", "true")] + p.form(year, cats, classes, fuels))
                 break
             except Exception:
                 time.sleep(2)
@@ -369,196 +315,112 @@ def ev_year(year):
     return dict(rows)
 
 
-def ev_load():
-    path = os.path.join(DATA, "ev2w.json")
-    ev = json.load(open(path)) if os.path.exists(path) else {"months": [], "T": [], "makers": {}}
-    keep = [k for k, _ in EV_MAKERS]
-    ev["makers"] = {k: v for k, v in ev["makers"].items() if k in keep}
-    return path, ev
-
-
-def ev_save(path, series, key_months=None):
-    months = sorted(series["T"])
-    out = {"months": months, "T": [series["T"][m] for m in months],
-           "makers": {k: [series[k].get(m, 0) for m in months] for k, _ in EV_MAKERS}}
-    json.dump(out, open(path, "w"), separators=(",", ":"))
-    return out
-
-
-def ev_series(ev):
-    series = {"T": dict(zip(ev["months"], ev["T"]))}
-    for k, _ in EV_MAKERS:
-        series[k] = dict(zip(ev["months"], ev["makers"].get(k, [0] * len(ev["months"]))))
-    return series
-
-
-def ev_from_portal(args):
-    path, ev = ev_load()
-    today = dt.date.today()
-    years = list(range(2022, today.year + 1)) if args.full or not ev["months"] else ([today.year - 1] if today.month <= 2 else []) + [today.year]
-    series = ev_series(ev)
-    for y in years:
-        rows = ev_year(y)
-        n = len(next(iter(rows.values()), []))
-        agg = {k: [0] * n for k, _ in EV_MAKERS}
-        total = [0] * n
-        for name, vals in rows.items():
-            for i, x in enumerate(vals):
-                total[i] += x
-            for disp, rx in EV_MAKERS:
-                if re.search(rx, name.upper()):
-                    for i, x in enumerate(vals):
-                        agg[disp][i] += x
-                    break
-        for i in range(n):
-            mm = f"{y}-{i + 1:02d}"
-            series["T"][mm] = total[i]
-            for k in agg:
-                series[k][mm] = agg[k][i]
-        print(f"EV {y} (official portal): {len(rows)} makers, {n} months, last month total {total[-1] if total else 0}")
-    return path, series
-
-
-def ev_from_vahanms():
-    """Always-on route for places the official portal blocks (GitHub's servers).
-
-    vahan.ms exposes calendar-year-to-date EV registrations by maker, refreshed daily, and monthly totals by fuel.
-    A month's figure for a maker is its year-to-date less the months already stored. Right after a month ends, the
-    previous month is finalised from the year-to-date first. Completed years from vahan.ms match the portal to
-    about 0.01 percent; the current month can differ by a fraction of a percent until the next full pull."""
-    path, ev = ev_load()
-    if not ev["months"]:
-        raise RuntimeError("no stored EV history to build on; run `ev --full` where the official portal is reachable")
-    series = ev_series(ev)
-    meta = json.loads(curl("https://vahan.ms/api/meta"))
-    rev = dt.date.fromisoformat(meta["last_revision"]["date"])
-    Y, m, d = rev.year, rev.month, rev.day
-    names = [k for k, _ in EV_MAKERS]
-
-    def makers(year):
-        r = json.loads(curl(f"https://vahan.ms/api/share?level=IN&segment=2W&fuel=ALL&dim=Maker&power=EV&year={year}&span=cy&top=40"))
-        return {x["oem"]: x["qty"] for x in r.get("rows", [])}
-
-    def total(year, month):
-        r = json.loads(curl(f"https://vahan.ms/api/share?level=IN&segment=2W&fuel=ALL&dim=Fuel&power=ALL&year={year}&span=month&month={month}&top=40"))
-        return sum(x["qty"] for x in r.get("rows", []) if x["oem"] in ("PURE EV", "ELECTRIC(BOV)"))
-
-    def before(k, year, upto):
-        return sum(series[k].get(f"{year}-{mm:02d}", 0) for mm in range(1, upto))
-
-    ytd = makers(Y)
-    if d <= 2:   # the month has just started: finalise the one before it from the year-to-date
-        py, pm, src = (Y - 1, 12, makers(Y - 1)) if m == 1 else (Y, m - 1, ytd)
-        for k in names:
-            if k in src:
-                series[k][f"{py}-{pm:02d}"] = max(0, src[k] - before(k, py, pm))
-    cur = f"{Y}-{m:02d}"
-    for k in names:
-        if k in ytd:
-            series[k][cur] = max(0, ytd[k] - before(k, Y, m))
-        else:
-            series[k].setdefault(cur, 0)
-    # monthly totals are exact month by month, so refresh the last three
-    for back in range(3):
-        yy, mm = (Y, m - back) if m - back >= 1 else (Y - 1, m - back + 12)
-        series["T"][f"{yy}-{mm:02d}"] = total(yy, mm)
-    for k in names:
-        for mm in series["T"]:
-            series[k].setdefault(mm, 0)
-    print(f"EV (vahan.ms year-to-date, data as of {rev}): {cur} total {series['T'][cur]}, "
-          + ", ".join(f"{k} {series[k][cur]}" for k in names[:5]))
-    return path, series
-
-
-def cmd_ev(args):
-    src = args.source
-    if src in ("auto", "portal"):
-        try:
-            path, series = ev_from_portal(args)
-        except Exception as ex:
-            if src == "portal":
-                raise
-            print(f"Official VAHAN portal not reachable from here ({type(ex).__name__}); using vahan.ms year-to-date instead.")
-            path, series = ev_from_vahanms()
+def cmd_portal(args):
+    path = os.path.join(DATA, "registrations.json")
+    store = json.load(open(path)) if os.path.exists(path) else {"months": []}
+    now = dt.datetime.utcnow() + dt.timedelta(hours=5, minutes=30)        # India time
+    today = now.date()
+    years = list(range(2022, today.year + 1)) if args.full or not store["months"] else ([today.year - 1] if today.month <= 2 else []) + [today.year]
+    # series[seg][name][month] -> value, seeded from what is stored
+    series = {}
+    for seg in SEG_ORDER:
+        if seg in store:
+            series[seg] = {k: dict(zip(store["months"], v)) for k, v in store[seg].items()}
+    only = [s for s in (args.segments or SEG_ORDER)]
+    for seg in only:
+        cfg = SEGMENTS[seg]
+        names = [k for k, _ in cfg["makers"]]
+        series.setdefault(seg, {})
+        for k in ["T"] + names:
+            series[seg].setdefault(k, {})
+        for y in years:
+            rows = portal_year(y, cfg.get("cats", ()), cfg.get("classes", ()), cfg.get("fuels", ()))
+            n = len(next(iter(rows.values()), []))
+            agg = {k: [0] * n for k in names}
+            total = [0] * n
+            for name, vals in rows.items():
+                for i, x in enumerate(vals):
+                    total[i] += x
+                for disp, rx in cfg["makers"]:
+                    if re.search(rx, name.upper()):
+                        for i, x in enumerate(vals):
+                            agg[disp][i] += x
+                        break
+            for i in range(n):
+                mm = f"{y}-{i + 1:02d}"
+                series[seg]["T"][mm] = total[i]
+                for k in names:
+                    series[seg][k][mm] = agg[k][i]
+            print(f"{seg} {y}: {len(rows)} makers, {n} months, last month {total[-1] if total else 0}")
+    months = sorted({m for seg in series.values() for m in seg["T"]})
+    out = {"months": months}
+    for seg in SEG_ORDER:
+        if seg in series:
+            out[seg] = {k: [series[seg][k].get(m, 0) for m in months] for k in ["T"] + [k for k, _ in SEGMENTS[seg]["makers"]]}
+    # data through yesterday on a morning run and through today on an evening run
+    done = today.day if now.hour >= 19 else today.day - 1
+    last = months[-1]
+    ly, lm = map(int, last.split("-"))
+    dim = (dt.date(ly + (lm == 12), lm % 12 + 1, 1) - dt.date(ly, lm, 1)).days
+    if (ly, lm) == (today.year, today.month):
+        out["as_of"] = {"days_done": max(done, 0), "days_in_month": dim}
+        if done < 10:    # a month with a few days of data would make the projection meaningless: hold it back
+            print(f"{last} has {done} days of data; holding it back until it has 10.")
+            for seg in SEG_ORDER:
+                if seg in out:
+                    for k in out[seg]:
+                        out[seg][k] = out[seg][k][:-1]
+            out["months"] = months[:-1]
+            ly2, lm2 = map(int, out["months"][-1].split("-"))
+            dim2 = (dt.date(ly2 + (lm2 == 12), lm2 % 12 + 1, 1) - dt.date(ly2, lm2, 1)).days
+            out["as_of"] = {"days_done": dim2, "days_in_month": dim2}
     else:
-        path, series = ev_from_vahanms()
-    if getattr(args, "dry", False):
-        _, old = ev_load()
-        cur = max(series["T"])
-        print("dry run, not saved. Latest month", cur, "new vs stored:",
-              {k: (series[k].get(cur, 0), dict(zip(old["months"], old["makers"].get(k, []))).get(cur)) for k, _ in EV_MAKERS})
+        out["as_of"] = {"days_done": dim, "days_in_month": dim}
+    out["fetched"] = now.strftime("%Y-%m-%dT%H:%M+05:30")
+    save("registrations.json", out, separators=(",", ":"))
+    print("registrations.json:", out["months"][0], "to", out["months"][-1], out["as_of"])
+
+
+# ---------------------------------------------------------------- publish: the files the page loads
+def cmd_publish(args):
+    os.makedirs(PUB, exist_ok=True)
+    only = args.only
+    if only in ("all", "registrations"):
+        reg = load("registrations.json")
+        with open(os.path.join(PUB, "registrations.json"), "w") as f:
+            json.dump(reg, f, separators=(",", ":"))
+        print("published data/registrations.json (to", reg["months"][-1] + ")")
+    if only == "registrations":
         return
-    out = ev_save(path, series)
-    print("ev2w.json:", out["months"][0], "to", out["months"][-1])
-
-
-# ---------------------------------------------------------------- build
-def swap(html, tag, body):
-    a, b = html.index(f"// @@{tag}_START"), html.index(f"// @@{tag}_END")
-    head = html[a:html.index("\n", a) + 1]
-    return html[:a] + head + body + "\n" + html[b:]
-
-
-def cmd_build(args):
-    v = load("vahan.json")
     disp = load("dispatch.json")
-    as_of = v.pop("as_of", {"days_done": 25, "days_in_month": 30})
-    as_of["built"] = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%MZ")
     start = "2025-04"
-    # dispatch arrays run from Apr-25 to the latest month that every OEM has
-    lastm = None
     allm = sorted({m for seg in disp.values() for o in seg.values() for m in o})
+    lastm = None
     for m in allm:
         if all(m in o for seg in disp.values() for o in seg.values()):
             lastm = m
     months = [m for m in allm if start <= m <= lastm]
-    lines = ["const DISP={"]
+    out = {"months": months, "DISP": {}}
     for seg, oems in disp.items():
-        lines.append(f'"{seg}":{{')
-        for name, d in oems.items():
-            arr = [d[m] for m in months]
-            lines.append(f'"{name}":{{v:"{name}",d:{json.dumps(arr, separators=(",", ":"))}}},')
-        lines.append("},")
-    lines.append("};")
-    html = open(HTML).read()
-    html = swap(html, "DISP", "// Domestic dispatches per OEM from the monthly sales filings on NSE, from Apr-25. Written by pipeline/refresh.py.\n" + "\n".join(lines))
-    evp = os.path.join(DATA, "ev2w.json")
-    if os.path.exists(evp):
-        ev = json.load(open(evp))
-        pos = {m: i for i, m in enumerate(ev["months"])}
-        def al(arr):
-            return [arr[pos[m]] if m in pos else 0 for m in v["months"]]
-        v["E2W"] = {"T": al(ev["T"])}
-        for k, arr in ev["makers"].items():
-            v["E2W"][k] = al(arr)
-    data = "const DATA=" + json.dumps(v, separators=(",", ":")) + f";\nconst AS_OF={json.dumps(as_of, separators=(',', ':'))};"
-    html = swap(html, "DATA", data)
-    open(HTML, "w").write(html)
-    print("index.html updated. Vahan to", v["months"][-1], "| dispatches to", lastm, "| as_of", as_of)
+        out["DISP"][seg] = {name: {"v": name, "d": [d[m] for m in months]} for name, d in oems.items()}
+    with open(os.path.join(PUB, "dispatch.json"), "w") as f:
+        json.dump(out, f, separators=(",", ":"))
+    print("published data/dispatch.json (to", months[-1] + ")")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = ap.add_subparsers(dest="cmd", required=True)
-    a = sp.add_parser("vahan"); a.add_argument("--full", action="store_true"); a.add_argument("--min-days", type=int, default=10)
+    a = sp.add_parser("portal"); a.add_argument("--full", action="store_true"); a.add_argument("--segments", nargs="*")
     b = sp.add_parser("dispatch"); b.add_argument("month", help="report month, e.g. 2026-11")
-    sp.add_parser("build")
-    e = sp.add_parser("ev"); e.add_argument("--full", action="store_true"); e.add_argument("--source", choices=["auto", "portal", "vahanms"], default="auto"); e.add_argument("--dry", action="store_true")
-    c = sp.add_parser("all"); c.add_argument("month"); c.add_argument("--full", action="store_true"); c.add_argument("--min-days", type=int, default=10); c.add_argument("--source", default="auto"); c.add_argument("--dry", action="store_true")
+    pu = sp.add_parser("publish"); pu.add_argument("--only", choices=["all", "registrations", "dispatch"], default="all")
     args = ap.parse_args()
-    if args.cmd in ("vahan", "all"):
-        cmd_vahan(args)
-    if args.cmd in ("ev", "all"):
-        try:
-            cmd_ev(args)
-        except Exception as ex:
-            if args.cmd == "ev":
-                raise
-            print("EV step failed, keeping the previous EV data:", ex)
-    if args.cmd in ("dispatch", "all"):
+    if args.cmd == "portal":
+        cmd_portal(args)
+    elif args.cmd == "dispatch":
         cmd_dispatch(args)
-    if args.cmd in ("build", "all"):
-        cmd_build(args)
+    elif args.cmd == "publish":
+        cmd_publish(args)
 
 
 if __name__ == "__main__":
