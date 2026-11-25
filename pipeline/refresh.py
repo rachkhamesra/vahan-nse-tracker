@@ -4,14 +4,17 @@
   python3 pipeline/refresh.py vahan                 # re-pull the last 4 months of Vahan registrations
   python3 pipeline/refresh.py vahan --full          # re-pull every month since 2022-01
   python3 pipeline/refresh.py dispatch 2026-11      # read November dispatches from NSE sales filings
-  python3 pipeline/refresh.py build                 # write both datasets into index.html
+  python3 pipeline/refresh.py ev                    # electric two-wheeler registrations by maker (official VAHAN portal)
+  python3 pipeline/refresh.py ev --full             # ...re-pull every year since 2022
+  python3 pipeline/refresh.py build                 # write all datasets into index.html
   python3 pipeline/refresh.py all 2026-11           # vahan + dispatch + build
 
 Needs: python3, curl, and `pip install pypdf`.
 Registrations come from the vahan.ms API (VAHAN Dashboard, MoRTH). Dispatches come from the
 monthly sales filings each OEM makes on NSE (corporate-announcements API, then the PDF).
 """
-import argparse, datetime as dt, json, os, re, subprocess, sys
+import argparse, datetime as dt, html as htmllib, json, os, re, subprocess, sys, time
+import http.cookiejar, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -289,6 +292,118 @@ def cmd_dispatch(args):
         print(f"{r[0]:20} {str(r[1]):>9}  {r[3]:8} {r[2]}")
 
 
+
+# ---------------------------------------------------------------- Electric two-wheelers (official VAHAN portal)
+# vahan.ms publishes maker-by-fuel only once a year, so monthly EV registrations by maker come from the VAHAN
+# dashboard itself (vahan.parivahan.gov.in), the same source vahan.ms is built on.
+PORTAL = "https://vahan.parivahan.gov.in/vahan4dashboard/vahan/view/reportview.xhtml"
+EV_MAKERS = [  # display name, regex on the legal name VAHAN uses
+    ("TVS", r"^TVS MOTOR"), ("Bajaj", r"^BAJAJ AUTO"), ("Ather", r"^ATHER ENERGY"), ("Ola Electric", r"^OLA ELECTRIC"),
+    ("Hero MotoCorp", r"^HERO MOTOCORP"), ("Ampere", r"^(GREAVES ELECTRIC|AMPERE VEHICLES)"), ("BGauss", r"^BGAUSS"),
+    ("River", r"^RIVER MOBILITY"), ("Okinawa", r"^OKINAWA"), ("Hero Electric", r"^HERO ELECTRIC"),
+]
+EV_CATEGORIES = ("2WIC", "2WN", "2WT")   # two-wheeler vehicle categories
+EV_FUELS = ("23", "4")                   # PURE EV, ELECTRIC(BOV)
+
+
+class Portal:
+    def __init__(self):
+        cj = http.cookiejar.CookieJar()
+        self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        page = self.op.open(urllib.request.Request(PORTAL, headers={"User-Agent": UA}), timeout=60).read().decode()
+        self.vs = re.search(r'name="javax.faces.ViewState"[^>]*value="([^"]+)"', page).group(1)
+
+    def post(self, data):
+        req = urllib.request.Request(PORTAL, data=urllib.parse.urlencode(data).encode(), headers={
+            "Faces-Request": "partial/ajax", "X-Requested-With": "XMLHttpRequest", "User-Agent": UA,
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"})
+        r = self.op.open(req, timeout=120).read().decode()
+        m = re.search(r'<update id="j_id1:javax.faces.ViewState:0"><!\[CDATA\[(.*?)\]\]>', r)
+        if m:
+            self.vs = m.group(1)
+        return r
+
+    def form(self, year, cats=(), fuels=()):
+        d = [("masterLayout_formlogin", "masterLayout_formlogin"), ("xaxisVar_input", "Month Wise"), ("yaxisVar_input", "Maker"),
+             ("selectedYear_input", str(year)), ("selectedYearType_input", "C"), ("j_idt34_input", "A"), ("j_idt43_input", "-1"),
+             ("selectedRto_input", "-1"), ("javax.faces.ViewState", self.vs)]
+        return d + [("VhCatg", c) for c in cats] + [("fuel", f) for f in fuels]
+
+
+def portal_rows(r):
+    m = re.search(r'<update id="(?:combTablePnl|groupingTable)"><!\[CDATA\[(.*?)\]\]></update>', r, re.S)
+    t = m.group(1) if m else r
+    out = []
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", t, re.S):
+        c = [htmllib.unescape(re.sub(r"<[^>]+>", "", x)).strip() for x in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)]
+        if len(c) >= 4 and c[0].isdigit():
+            out.append((c[1], [int(x.replace(",", "")) for x in c[2:-1]]))
+    return out
+
+
+def ev_year(year):
+    """Monthly EV two-wheeler registrations for every maker in a calendar year: {maker: [Jan, Feb, ...]}."""
+    p = Portal()
+    render = "VhCatg norms fuel VhClass combTablePnl groupingTable msg vhCatgPnl"
+    # the filter panel only takes effect after a first unfiltered query, then its own Refresh button
+    p.post([("javax.faces.partial.ajax", "true"), ("javax.faces.source", "j_idt75"), ("javax.faces.partial.execute", "@all"),
+            ("javax.faces.partial.render", render), ("j_idt75", "j_idt75")] + p.form(year))
+    r = p.post([("javax.faces.partial.ajax", "true"), ("javax.faces.source", "j_idt80"), ("javax.faces.partial.execute", "@all"),
+                ("javax.faces.partial.render", "combTablePnl"), ("j_idt80", "j_idt80")] + p.form(year, EV_CATEGORIES, EV_FUELS))
+    m = re.search(r"rowCount:(\d+)", r)
+    n = int(m.group(1)) if m else 0
+    rows = portal_rows(r)
+    for first in range(25, n, 25):
+        for attempt in range(4):
+            try:
+                r = p.post([("javax.faces.partial.ajax", "true"), ("javax.faces.source", "groupingTable"),
+                            ("javax.faces.partial.execute", "groupingTable"), ("javax.faces.partial.render", "groupingTable"),
+                            ("groupingTable", "groupingTable"), ("groupingTable_pagination", "true"), ("groupingTable_first", str(first)),
+                            ("groupingTable_rows", "25"), ("groupingTable_encodeFeature", "true")] + p.form(year, EV_CATEGORIES, EV_FUELS))
+                break
+            except Exception:
+                time.sleep(2)
+        rows += portal_rows(r)
+    if n and len(rows) != n:
+        raise RuntimeError(f"VAHAN portal returned {len(rows)} of {n} makers for {year}")
+    return dict(rows)
+
+
+def cmd_ev(args):
+    path = os.path.join(DATA, "ev2w.json")
+    ev = json.load(open(path)) if os.path.exists(path) else {"months": [], "T": [], "makers": {}}
+    today = dt.date.today()
+    years = list(range(2022, today.year + 1)) if args.full or not ev["months"] else ([today.year - 1] if today.month <= 2 else []) + [today.year]
+    cur = {m: i for i, m in enumerate(ev["months"])}
+    series = {"T": dict(zip(ev["months"], ev["T"]))}
+    for k, v in ev["makers"].items():
+        series[k] = dict(zip(ev["months"], v))
+    for y in years:
+        rows = ev_year(y)
+        n = len(next(iter(rows.values()), []))
+        agg = {k: [0] * n for k, _ in EV_MAKERS}
+        total = [0] * n
+        for name, vals in rows.items():
+            for i, x in enumerate(vals):
+                total[i] += x
+            for disp, rx in EV_MAKERS:
+                if re.search(rx, name.upper()):
+                    for i, x in enumerate(vals):
+                        agg[disp][i] += x
+                    break
+        for i in range(n):
+            mm = f"{y}-{i + 1:02d}"
+            series["T"][mm] = total[i]
+            for k in agg:
+                series.setdefault(k, {})[mm] = agg[k][i]
+        print(f"EV {y}: {len(rows)} makers, {n} months, last month total {total[-1] if total else 0}")
+    months = sorted(series["T"])
+    out = {"months": months, "T": [series["T"][m] for m in months],
+           "makers": {k: [series[k].get(m, 0) for m in months] for k, _ in EV_MAKERS}}
+    json.dump(out, open(path, "w"), separators=(",", ":"))
+    print("ev2w.json:", months[0], "to", months[-1])
+
+
 # ---------------------------------------------------------------- build
 def swap(html, tag, body):
     a, b = html.index(f"// @@{tag}_START"), html.index(f"// @@{tag}_END")
@@ -318,6 +433,15 @@ def cmd_build(args):
     lines.append("};")
     html = open(HTML).read()
     html = swap(html, "DISP", "// Domestic dispatches per OEM from the monthly sales filings on NSE, from Apr-25. Written by pipeline/refresh.py.\n" + "\n".join(lines))
+    evp = os.path.join(DATA, "ev2w.json")
+    if os.path.exists(evp):
+        ev = json.load(open(evp))
+        pos = {m: i for i, m in enumerate(ev["months"])}
+        def al(arr):
+            return [arr[pos[m]] if m in pos else 0 for m in v["months"]]
+        v["E2W"] = {"T": al(ev["T"])}
+        for k, arr in ev["makers"].items():
+            v["E2W"][k] = al(arr)
     data = "const DATA=" + json.dumps(v, separators=(",", ":")) + f";\nconst AS_OF={json.dumps(as_of, separators=(',', ':'))};"
     html = swap(html, "DATA", data)
     open(HTML, "w").write(html)
@@ -330,10 +454,18 @@ def main():
     a = sp.add_parser("vahan"); a.add_argument("--full", action="store_true"); a.add_argument("--min-days", type=int, default=10)
     b = sp.add_parser("dispatch"); b.add_argument("month", help="report month, e.g. 2026-11")
     sp.add_parser("build")
+    e = sp.add_parser("ev"); e.add_argument("--full", action="store_true")
     c = sp.add_parser("all"); c.add_argument("month"); c.add_argument("--full", action="store_true"); c.add_argument("--min-days", type=int, default=10)
     args = ap.parse_args()
     if args.cmd in ("vahan", "all"):
         cmd_vahan(args)
+    if args.cmd in ("ev", "all"):
+        try:
+            cmd_ev(args)
+        except Exception as ex:
+            if args.cmd == "ev":
+                raise
+            print("EV step failed, keeping the previous EV data:", ex)
     if args.cmd in ("dispatch", "all"):
         cmd_dispatch(args)
     if args.cmd in ("build", "all"):

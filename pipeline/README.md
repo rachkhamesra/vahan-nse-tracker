@@ -5,6 +5,7 @@ Two data sources, both read straight from the source, no logins.
 | Data | Source | Stored in |
 |---|---|---|
 | Registrations | vahan.ms API (VAHAN Dashboard, MoRTH), all-India, by maker | `data/vahan.json` |
+| Electric two-wheeler registrations | Official VAHAN dashboard (vahan.parivahan.gov.in), month by month by maker, fuel types pure EV and battery-operated | `data/ev2w.json` |
 | Dispatches | Monthly sales filings each OEM makes on NSE (announcements API, then the PDF) | `data/dispatch.json` |
 
 `index.html` embeds both. `refresh.py build` rewrites the blocks between the `@@DATA` and `@@DISP` markers.
@@ -50,3 +51,12 @@ registrations, rebuilds `index.html`, and commits and publishes only if somethin
 month it also tries last month's NSE sales filings. NSE can throttle cloud servers, so that step is allowed to fail;
 if a company shows as missing, run `python3 pipeline/refresh.py dispatch YYYY-MM` locally and push.
 Run it on demand from the Actions tab with "Run workflow".
+
+## Electric two-wheelers
+
+vahan.ms publishes maker-by-fuel only once a year, so monthly EV registrations by maker are read from the VAHAN
+dashboard itself. `python3 pipeline/refresh.py ev` re-pulls the current year (about 35 seconds); `--full` re-pulls 2022 onward.
+It drives the dashboard's own form: a first unfiltered query, then the filter panel's Refresh with two-wheeler
+categories and the EV fuel types, then paginates through every maker. Legal names are grouped to display names in
+`EV_MAKERS` in `refresh.py`; everything else rolls into the segment total. If the portal changes its page or blocks
+GitHub's servers, the daily workflow keeps the previous EV data and the rest still updates.

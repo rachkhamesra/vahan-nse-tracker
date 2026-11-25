@@ -30,6 +30,10 @@ jobs:
       - name: Pull latest Vahan registrations
         run: python3 pipeline/refresh.py vahan
 
+      - name: Pull electric two-wheeler registrations (official VAHAN dashboard)
+        continue-on-error: true
+        run: python3 pipeline/refresh.py ev
+
       - name: Read last month's dispatches from NSE (first days of the month only)
         continue-on-error: true
         run: |
