@@ -503,6 +503,7 @@ def cmd_build(args):
     v = load("vahan.json")
     disp = load("dispatch.json")
     as_of = v.pop("as_of", {"days_done": 25, "days_in_month": 30})
+    as_of["built"] = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%MZ")
     start = "2025-04"
     # dispatch arrays run from Apr-25 to the latest month that every OEM has
     lastm = None
