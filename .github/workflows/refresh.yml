@@ -31,7 +31,6 @@ jobs:
         run: python3 pipeline/refresh.py vahan
 
       - name: Read last month's dispatches from NSE (first days of the month only)
-        if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.schedule && true)) }}
         continue-on-error: true
         run: |
           DAY=$(date -u +%d)
