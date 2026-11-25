@@ -54,9 +54,19 @@ Run it on demand from the Actions tab with "Run workflow".
 
 ## Electric two-wheelers
 
-vahan.ms publishes maker-by-fuel only once a year, so monthly EV registrations by maker are read from the VAHAN
-dashboard itself. `python3 pipeline/refresh.py ev` re-pulls the current year (about 35 seconds); `--full` re-pulls 2022 onward.
-It drives the dashboard's own form: a first unfiltered query, then the filter panel's Refresh with two-wheeler
-categories and the EV fuel types, then paginates through every maker. Legal names are grouped to display names in
-`EV_MAKERS` in `refresh.py`; everything else rolls into the segment total. If the portal changes its page or blocks
-GitHub's servers, the daily workflow keeps the previous EV data and the rest still updates.
+vahan.ms publishes maker-by-fuel only once a year, so exact monthly EV registrations by maker come from the VAHAN
+dashboard itself (vahan.parivahan.gov.in). That portal resets connections from GitHub's servers, so `ev` works in two ways:
+
+1. **Official portal** (works from a normal home or office connection). `python3 pipeline/refresh.py ev` re-pulls the
+   current year in about 35 seconds; `--full` re-pulls 2022 onward. It drives the dashboard's own form: an unfiltered
+   query, then the filter panel's Refresh with two-wheeler categories and the EV fuel types, then every page of makers.
+2. **vahan.ms year-to-date** (used automatically when the portal is unreachable, which is how the daily GitHub run
+   works). vahan.ms gives calendar-year-to-date EV registrations by maker, refreshed daily. A maker's month is its
+   year-to-date less the months already stored, and just after a month ends the previous month is finalised first.
+   Monthly totals come straight from vahan.ms by fuel. Completed years match the portal to about 0.01 percent; the
+   current month sits about one day behind the portal because vahan.ms rebuilds at 04:00 IST.
+
+`--source portal` or `--source vahanms` forces one route, and `--dry` prints what would change without saving.
+Run `ev --full` from a normal connection now and then to refresh the exact history; the daily run never touches it.
+Legal names are grouped to display names in `EV_MAKERS`. River and other small makers are not itemised on vahan.ms,
+so they sit inside the segment total.

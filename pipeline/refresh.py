@@ -300,7 +300,7 @@ PORTAL = "https://vahan.parivahan.gov.in/vahan4dashboard/vahan/view/reportview.x
 EV_MAKERS = [  # display name, regex on the legal name VAHAN uses
     ("TVS", r"^TVS MOTOR"), ("Bajaj", r"^BAJAJ AUTO"), ("Ather", r"^ATHER ENERGY"), ("Ola Electric", r"^OLA ELECTRIC"),
     ("Hero MotoCorp", r"^HERO MOTOCORP"), ("Ampere", r"^(GREAVES ELECTRIC|AMPERE VEHICLES)"), ("BGauss", r"^BGAUSS"),
-    ("River", r"^RIVER MOBILITY"), ("Okinawa", r"^OKINAWA"), ("Hero Electric", r"^HERO ELECTRIC"),
+    ("Okinawa", r"^OKINAWA"), ("Hero Electric", r"^HERO ELECTRIC"),
 ]
 EV_CATEGORIES = ("2WIC", "2WN", "2WT")   # two-wheeler vehicle categories
 EV_FUELS = ("23", "4")                   # PURE EV, ELECTRIC(BOV)
@@ -310,7 +310,7 @@ class Portal:
     def __init__(self):
         cj = http.cookiejar.CookieJar()
         self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-        page = self.op.open(urllib.request.Request(PORTAL, headers={"User-Agent": UA}), timeout=60).read().decode()
+        page = self.op.open(urllib.request.Request(PORTAL, headers={"User-Agent": UA}), timeout=20).read().decode()
         self.vs = re.search(r'name="javax.faces.ViewState"[^>]*value="([^"]+)"', page).group(1)
 
     def post(self, data):
@@ -369,15 +369,34 @@ def ev_year(year):
     return dict(rows)
 
 
-def cmd_ev(args):
+def ev_load():
     path = os.path.join(DATA, "ev2w.json")
     ev = json.load(open(path)) if os.path.exists(path) else {"months": [], "T": [], "makers": {}}
+    keep = [k for k, _ in EV_MAKERS]
+    ev["makers"] = {k: v for k, v in ev["makers"].items() if k in keep}
+    return path, ev
+
+
+def ev_save(path, series, key_months=None):
+    months = sorted(series["T"])
+    out = {"months": months, "T": [series["T"][m] for m in months],
+           "makers": {k: [series[k].get(m, 0) for m in months] for k, _ in EV_MAKERS}}
+    json.dump(out, open(path, "w"), separators=(",", ":"))
+    return out
+
+
+def ev_series(ev):
+    series = {"T": dict(zip(ev["months"], ev["T"]))}
+    for k, _ in EV_MAKERS:
+        series[k] = dict(zip(ev["months"], ev["makers"].get(k, [0] * len(ev["months"]))))
+    return series
+
+
+def ev_from_portal(args):
+    path, ev = ev_load()
     today = dt.date.today()
     years = list(range(2022, today.year + 1)) if args.full or not ev["months"] else ([today.year - 1] if today.month <= 2 else []) + [today.year]
-    cur = {m: i for i, m in enumerate(ev["months"])}
-    series = {"T": dict(zip(ev["months"], ev["T"]))}
-    for k, v in ev["makers"].items():
-        series[k] = dict(zip(ev["months"], v))
+    series = ev_series(ev)
     for y in years:
         rows = ev_year(y)
         n = len(next(iter(rows.values()), []))
@@ -395,13 +414,82 @@ def cmd_ev(args):
             mm = f"{y}-{i + 1:02d}"
             series["T"][mm] = total[i]
             for k in agg:
-                series.setdefault(k, {})[mm] = agg[k][i]
-        print(f"EV {y}: {len(rows)} makers, {n} months, last month total {total[-1] if total else 0}")
-    months = sorted(series["T"])
-    out = {"months": months, "T": [series["T"][m] for m in months],
-           "makers": {k: [series[k].get(m, 0) for m in months] for k, _ in EV_MAKERS}}
-    json.dump(out, open(path, "w"), separators=(",", ":"))
-    print("ev2w.json:", months[0], "to", months[-1])
+                series[k][mm] = agg[k][i]
+        print(f"EV {y} (official portal): {len(rows)} makers, {n} months, last month total {total[-1] if total else 0}")
+    return path, series
+
+
+def ev_from_vahanms():
+    """Always-on route for places the official portal blocks (GitHub's servers).
+
+    vahan.ms exposes calendar-year-to-date EV registrations by maker, refreshed daily, and monthly totals by fuel.
+    A month's figure for a maker is its year-to-date less the months already stored. Right after a month ends, the
+    previous month is finalised from the year-to-date first. Completed years from vahan.ms match the portal to
+    about 0.01 percent; the current month can differ by a fraction of a percent until the next full pull."""
+    path, ev = ev_load()
+    if not ev["months"]:
+        raise RuntimeError("no stored EV history to build on; run `ev --full` where the official portal is reachable")
+    series = ev_series(ev)
+    meta = json.loads(curl("https://vahan.ms/api/meta"))
+    rev = dt.date.fromisoformat(meta["last_revision"]["date"])
+    Y, m, d = rev.year, rev.month, rev.day
+    names = [k for k, _ in EV_MAKERS]
+
+    def makers(year):
+        r = json.loads(curl(f"https://vahan.ms/api/share?level=IN&segment=2W&fuel=ALL&dim=Maker&power=EV&year={year}&span=cy&top=40"))
+        return {x["oem"]: x["qty"] for x in r.get("rows", [])}
+
+    def total(year, month):
+        r = json.loads(curl(f"https://vahan.ms/api/share?level=IN&segment=2W&fuel=ALL&dim=Fuel&power=ALL&year={year}&span=month&month={month}&top=40"))
+        return sum(x["qty"] for x in r.get("rows", []) if x["oem"] in ("PURE EV", "ELECTRIC(BOV)"))
+
+    def before(k, year, upto):
+        return sum(series[k].get(f"{year}-{mm:02d}", 0) for mm in range(1, upto))
+
+    ytd = makers(Y)
+    if d <= 2:   # the month has just started: finalise the one before it from the year-to-date
+        py, pm, src = (Y - 1, 12, makers(Y - 1)) if m == 1 else (Y, m - 1, ytd)
+        for k in names:
+            if k in src:
+                series[k][f"{py}-{pm:02d}"] = max(0, src[k] - before(k, py, pm))
+    cur = f"{Y}-{m:02d}"
+    for k in names:
+        if k in ytd:
+            series[k][cur] = max(0, ytd[k] - before(k, Y, m))
+        else:
+            series[k].setdefault(cur, 0)
+    # monthly totals are exact month by month, so refresh the last three
+    for back in range(3):
+        yy, mm = (Y, m - back) if m - back >= 1 else (Y - 1, m - back + 12)
+        series["T"][f"{yy}-{mm:02d}"] = total(yy, mm)
+    for k in names:
+        for mm in series["T"]:
+            series[k].setdefault(mm, 0)
+    print(f"EV (vahan.ms year-to-date, data as of {rev}): {cur} total {series['T'][cur]}, "
+          + ", ".join(f"{k} {series[k][cur]}" for k in names[:5]))
+    return path, series
+
+
+def cmd_ev(args):
+    src = args.source
+    if src in ("auto", "portal"):
+        try:
+            path, series = ev_from_portal(args)
+        except Exception as ex:
+            if src == "portal":
+                raise
+            print(f"Official VAHAN portal not reachable from here ({type(ex).__name__}); using vahan.ms year-to-date instead.")
+            path, series = ev_from_vahanms()
+    else:
+        path, series = ev_from_vahanms()
+    if getattr(args, "dry", False):
+        _, old = ev_load()
+        cur = max(series["T"])
+        print("dry run, not saved. Latest month", cur, "new vs stored:",
+              {k: (series[k].get(cur, 0), dict(zip(old["months"], old["makers"].get(k, []))).get(cur)) for k, _ in EV_MAKERS})
+        return
+    out = ev_save(path, series)
+    print("ev2w.json:", out["months"][0], "to", out["months"][-1])
 
 
 # ---------------------------------------------------------------- build
@@ -454,8 +542,8 @@ def main():
     a = sp.add_parser("vahan"); a.add_argument("--full", action="store_true"); a.add_argument("--min-days", type=int, default=10)
     b = sp.add_parser("dispatch"); b.add_argument("month", help="report month, e.g. 2026-11")
     sp.add_parser("build")
-    e = sp.add_parser("ev"); e.add_argument("--full", action="store_true")
-    c = sp.add_parser("all"); c.add_argument("month"); c.add_argument("--full", action="store_true"); c.add_argument("--min-days", type=int, default=10)
+    e = sp.add_parser("ev"); e.add_argument("--full", action="store_true"); e.add_argument("--source", choices=["auto", "portal", "vahanms"], default="auto"); e.add_argument("--dry", action="store_true")
+    c = sp.add_parser("all"); c.add_argument("month"); c.add_argument("--full", action="store_true"); c.add_argument("--min-days", type=int, default=10); c.add_argument("--source", default="auto"); c.add_argument("--dry", action="store_true")
     args = ap.parse_args()
     if args.cmd in ("vahan", "all"):
         cmd_vahan(args)
