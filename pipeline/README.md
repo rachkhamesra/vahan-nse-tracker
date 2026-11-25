@@ -42,3 +42,11 @@ Run steps separately if you prefer: `vahan`, `dispatch 2026-11`, `build`.
   The stock chart adapts (it drops the scenario bar once the month has dispatches). Once December has 10 or more days of data
   the page needs one more pass.
 - `cache/` holds downloaded PDFs and can be deleted at any time.
+
+## Automatic daily refresh
+
+`.github/workflows/refresh.yml` runs every day at 07:30 IST (Vahan rebuilds around 04:00 IST). It pulls the latest
+registrations, rebuilds `index.html`, and commits and publishes only if something changed. On the 1st to 5th of the
+month it also tries last month's NSE sales filings. NSE can throttle cloud servers, so that step is allowed to fail;
+if a company shows as missing, run `python3 pipeline/refresh.py dispatch YYYY-MM` locally and push.
+Run it on demand from the Actions tab with "Run workflow".
