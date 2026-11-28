@@ -37,3 +37,16 @@ Stop it with `launchctl bootout gui/$(id -u)/com.vahan-nse-tracker.refresh`.
 reads the PDF and takes the domestic figure. Every value is screened against the previous month, so a quarterly total is
 rejected. A line marked `MISSING` means the company has not filed yet or changed its layout; run it again later or add the
 number to `pipeline/data/dispatch.json` by hand. Reading the PDFs needs `pip install pypdf`.
+
+## Capacity versus output
+
+`data/capacity.json` is curated by hand. Each company lists its capacity history, what the figure counts, planned
+expansion, the management view, short paraphrases of what was said with the page, and the official documents (NSE
+filing URL, filing date, PDF page). To update one, read the latest annual report, investor presentation and earnings-call
+transcript filed on NSE (search for "capacity"), add the figure with its source, and push. Companies where nothing was
+found are listed as "not disclosed" rather than estimated.
+
+`data/output.json` holds monthly total output for the capacity comparison, written by `python3 pipeline/refresh.py output YYYY-MM`
+(run by the GitHub workflow with the dispatches): total dispatches including exports for Hero, TVS (two-wheelers), Bajaj,
+Royal Enfield, Hyundai and Mahindra utility vehicles, and monthly production for Maruti Suzuki. Mahindra months where the
+filing gives total auto sales instead of utility vehicles are left empty.

@@ -35,6 +35,7 @@ jobs:
             PREV=$(date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m)
             echo "Reading dispatches for $PREV"
             python3 pipeline/refresh.py dispatch "$PREV"
+            python3 pipeline/refresh.py output "$PREV"
           else
             echo "Day $DAY: not the start of the month, nothing to read."
           fi
@@ -44,7 +45,7 @@ jobs:
           python3 pipeline/refresh.py publish --only dispatch
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/dispatch.json pipeline/data/dispatch.json
+          git add data/dispatch.json data/output.json pipeline/data/dispatch.json pipeline/data/output.json
           if git diff --cached --quiet; then
             echo "No dispatch changes."
           else

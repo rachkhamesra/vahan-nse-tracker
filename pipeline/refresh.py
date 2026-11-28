@@ -223,6 +223,105 @@ def cmd_dispatch(args):
 
 
 
+# ---------------------------------------------------------------- Output (for the capacity comparison): total dispatches or production
+# Capacity covers everything a plant makes, so this is total output: domestic plus exports. Maruti files monthly production.
+def p_hero_total(t, t1):
+    m = re.search(r"([\d,]{6,})\s+([\d,]{6,})\s+([\d,]{6,})\s+([\d,]{6,})\s+Domestic", t1)
+    return [n(m.group(1))] if m else []
+
+
+def p_tvs_total(t, t1):
+    out = []
+    for r in re.finditer(r"Total two[- ]+wheelers?\s+registered(.{0,200})", t1):
+        nums = re.findall(r"([\d,]{5,})\s*units", r.group(1))
+        if re.search(r"sales\s+of", r.group(1)[:80]) and nums:
+            out.append(n(nums[0]))
+        elif len(nums) > 1:
+            out.append(n(nums[1]))
+    return out[:1]
+
+
+def p_bajaj_total(t, t1):
+    m = re.search(r"TOTAL \(2-WH \+ CV\).*?\nTOTAL\s+([\d,]+)", t, re.S)
+    return [n(m.group(1))] if m else []
+
+
+def p_re_total(t, t1):
+    m = re.search(r"Total ([\d,]+) ([\d,]+) -?\d+% ([\d,]+) ([\d,]+) -?\d+%", t1)
+    return [n(m.group(1))] if m else []
+
+
+def p_hyundai_total(t, t1):
+    m = re.search(r"total (?:monthly )?sales (?:of|stood at) ([\d,][\d, ]*\d) units", t1, re.I)
+    return [n(m.group(1).replace(" ", ""))] if m else []
+
+
+def p_mm_total(t, t1):
+    m = re.search(r"overall,?\s+([\d,]+)\s+vehicles,? including exports", t1)
+    return [n(m.group(1))] if m else []
+
+
+def p_maruti_prod(t, t1):
+    m = re.search(r"Grand Total \(Passenger Vehicles \+ Light Commercial Vehicles\)\s+([\d,]+)", t1)
+    return [n(m.group(1))] if m else []
+
+
+OUTPUT = {
+    "Hero MotoCorp": (["HEROMOTOCO"], "total dispatches, domestic plus exports", p_hero_total),
+    "TVS": (["TVSMOTOR"], "two-wheeler sales, domestic plus exports (excludes three-wheelers)", p_tvs_total),
+    "Bajaj": (["BAJAJ-AUTO"], "total sales of two-wheelers and commercial (three-wheelers), domestic plus exports", p_bajaj_total),
+    "Royal Enfield": (["EICHERMOT"], "total motorcycle sales, domestic plus exports", p_re_total),
+    "Hyundai": (["HYUNDAI"], "total sales, domestic plus exports", p_hyundai_total),
+    "Mahindra (SUVs)": (["M%26M"], "utility vehicle sales, domestic plus exports", p_mm_total),
+    "Maruti Suzuki": (["MARUTI"], "production of passenger and light commercial vehicles", p_maruti_prod),
+}
+
+
+def cmd_output(args):
+    path = os.path.join(DATA, "output.json")
+    store = json.load(open(path)) if os.path.exists(path) else {"what": {}, "series": {}}
+    y, m = map(int, args.month.split("-"))
+    fy, fm = (y + 1, 1) if m == 12 else (y, m + 1)
+    d1, d2 = f"01-{fm:02d}-{fy}", f"07-{fm:02d}-{fy}"
+    prev = f"{y - (m == 1)}-{(m - 2) % 12 + 1:02d}"
+    os.makedirs(CACHE, exist_ok=True)
+    for name, (syms, what, parser) in OUTPUT.items():
+        store["what"][name] = what
+        ser = store["series"].setdefault(name, {})
+        items = [x for sym in syms for x in nse_list(sym, d1, d2)]
+        files = sorted({(x["an_dt"][:11], x["attchmntFile"]) for x in items
+                        if (x.get("attchmntFile") or "").endswith(".pdf") and not re.search(r"transcript|newspaper|investor|analyst|ESOP|Reg74|Allot", x["attchmntFile"], re.I)})
+        prevv = ser.get(prev)
+        found = None
+        for day, u in files:
+            fn = os.path.join(CACHE, u.split("/")[-1])
+            if not os.path.exists(fn) or os.path.getsize(fn) < 1000:
+                curl(u, out=fn)
+            try:
+                t = pdf_text(fn)
+            except Exception:
+                continue
+            for c in parser(t, re.sub(r"\s+", " ", t)):
+                if prevv is not None and not 0.4 < c / prevv < 2.5:
+                    continue
+                if name == "Mahindra (SUVs)":
+                    # in some months the "overall" figure in the utility-vehicle sentence is total auto sales; reject those
+                    dom = json.load(open(os.path.join(DATA, "dispatch.json")))["CAR"]["Mahindra"].get(args.month)
+                    if dom and c > dom * 1.12:
+                        continue
+                found = (c, u.split("/")[-1])
+                break
+            if found:
+                break
+        if found:
+            ser[args.month] = found[0]
+            print(f"{name:18} {found[0]:>9}  ok  {found[1]}")
+        else:
+            print(f"{name:18} {'None':>9}  MISSING ({len(files)} filings checked)")
+    with open(path, "w") as f:
+        json.dump(store, f, indent=1)
+
+
 # ---------------------------------------------------------------- Registrations: the official VAHAN dashboard
 PORTAL = "https://vahan.parivahan.gov.in/vahan4dashboard/vahan/view/reportview.xhtml"
 # Segments are defined with the dashboard's own filters. `cats` are Vehicle Category codes, `classes` Vehicle Class ids,
@@ -406,6 +505,14 @@ def cmd_publish(args):
     with open(os.path.join(PUB, "dispatch.json"), "w") as f:
         json.dump(out, f, separators=(",", ":"))
     print("published data/dispatch.json (to", months[-1] + ")")
+    op = os.path.join(DATA, "output.json")
+    if os.path.exists(op):
+        o = json.load(open(op))
+        allm = sorted({m for v in o["series"].values() for m in v})
+        om = [m for m in allm if start <= m <= allm[-1] and all(m in v for v in o["series"].values())]
+        with open(os.path.join(PUB, "output.json"), "w") as f:
+            json.dump({"months": om, "what": o["what"], "series": {k: [v[m] for m in om] for k, v in o["series"].items()}}, f, separators=(",", ":"))
+        print("published data/output.json (to", om[-1] + ")")
 
 
 def main():
@@ -413,12 +520,15 @@ def main():
     sp = ap.add_subparsers(dest="cmd", required=True)
     a = sp.add_parser("portal"); a.add_argument("--full", action="store_true"); a.add_argument("--segments", nargs="*")
     b = sp.add_parser("dispatch"); b.add_argument("month", help="report month, e.g. 2026-11")
+    o = sp.add_parser("output"); o.add_argument("month", help="report month, e.g. 2026-11")
     pu = sp.add_parser("publish"); pu.add_argument("--only", choices=["all", "registrations", "dispatch"], default="all")
     args = ap.parse_args()
     if args.cmd == "portal":
         cmd_portal(args)
     elif args.cmd == "dispatch":
         cmd_dispatch(args)
+    elif args.cmd == "output":
+        cmd_output(args)
     elif args.cmd == "publish":
         cmd_publish(args)
 

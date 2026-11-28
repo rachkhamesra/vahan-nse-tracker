@@ -60,6 +60,15 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .cmp th{font-weight:600;color:var(--fg);border-bottom:1px solid var(--mut)}
 .cmp th i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
 .cmp td.d{color:var(--mut)}
+.captbl{overflow-x:auto;margin-top:8px}
+.captbl table{border-collapse:collapse;width:100%;min-width:1150px;font-size:12px}
+.captbl th,.captbl td{padding:6px 8px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+.captbl th{font-weight:600;border-bottom:1px solid var(--mut);white-space:nowrap}
+.captbl td.n{font-variant-numeric:tabular-nums}
+.captbl td:nth-child(2){min-width:200px}.captbl td:nth-child(3){min-width:150px}.captbl td:nth-child(4){white-space:nowrap}.captbl td:nth-child(6){min-width:270px}.captbl td:nth-child(7){min-width:250px}
+.captbl a{color:var(--blue)}
+.captbl .src{display:block;margin-bottom:3px}
+.pillv{display:inline-block;border-radius:4px;padding:1px 7px;font-weight:600;font-size:11px;color:#fff;white-space:nowrap}
 .foot{color:var(--mut);font-size:11px;line-height:1.55;max-width:160ch}
 .foot b{color:var(--fg);font-weight:600}
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.cmpgrid{grid-template-columns:1fr}}
@@ -139,13 +148,22 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
    <div class="legend" id="lg6"></div><div class="cv" style="height:440px"><canvas id="f" role="img" aria-label="Implied dealer stock in days"></canvas></div>
    <p class="read" id="r6"></p>
   </div>
+  <div class="card" style="grid-column:1/-1">
+   <h2>Capacity versus output <span>who is capped by plant capacity, and who is not</span></h2>
+   <p class="read" id="capnote" style="margin-top:2px"></p>
+   <div class="cmpgrid">
+    <div><h3>Utilisation: output as a share of stated capacity</h3><div class="legend" id="lgcap"></div><div class="cv" style="height:340px"><canvas id="k1" role="img" aria-label="Utilisation by company"></canvas></div></div>
+    <div><div class="ctl" style="margin:0"><label>Company <select id="capSel"></select></label></div><h3 id="k2t">Monthly output and capacity</h3><div class="cv" style="height:300px"><canvas id="k2" role="img" aria-label="Monthly output against capacity"></canvas></div></div>
+   </div>
+   <div class="captbl" id="captbl"></div>
+  </div>
  </div>
  <p class="foot" id="foot"></p>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-let DATA,AS_OF,DISP,DM,M,FETCHED="",BUILT="";
+let DATA,AS_OF,DISP,DM,M,CAP=null,OUTP=null,FETCHED="",BUILT="";
 const SEGS={"2W":"Two-wheelers","E2W":"Electric 2W","CAR":"Cars","CV":"Commercial","3W":"Three-wheelers"};
 let MTD_DAYS,NOVD,N0,LY,LM,liveBusy=false;
 function epoch(){MTD_DAYS=AS_OF.days_done;NOVD=AS_OF.days_in_month;N0=M.length-1;[LY,LM]=M[N0].split("-").map(Number)}
@@ -219,8 +237,8 @@ function render(){
   $("t1").textContent=label;
   kpis(a,raw,c);
   $("cav").innerHTML=st.seg==="E2W"?`<b>Electric two-wheelers.</b> Registrations are battery-electric two-wheelers (pure EV and battery-operated fuel types) from the official VAHAN dashboard, month by month, by maker. Dispatch charts are not loaded for this segment yet, because several makers (Bajaj, Ola) do not report electric dispatches separately.`:`<b>Domestic only.</b> Dispatch bars exclude exports and are set against Vahan retail registrations, so the comparison is like for like. Export share of total dispatches: ${EXPORTS[st.seg]}.`;
-  chart1(a);chart2(a);chart3();chart4(a,c);dispTrend();dispCharts(c);compare();
-  $("foot").innerHTML=`<b>Sources.</b> Registrations: the official VAHAN dashboard (vahan.parivahan.gov.in, Ministry of Road Transport and Highways), all-India, by maker, month by month; the page loads the latest pull every time it opens. Segments follow the dashboard's own filters: two-wheelers are the three two-wheeler vehicle categories; electric two-wheelers are those with the pure-EV or battery-operated fuel types; cars are Motor Car, Motor Cab and Maxi Cab; commercial are goods carriers, articulated vehicles and buses; three-wheelers are the three three-wheeler categories. Recent months are restated upward as late registrations sync, so the current month is conservative. Dispatches: domestic sales from each company's monthly sales filing on NSE, Apr 2025 onward. Honda, Kia, Toyota, Suzuki Motorcycle and TVS three-wheelers are left out of the dispatch charts; their registrations still appear. Mahindra commercial dispatches are its LCV lines (under 2T and 2-3.5T). <b>Reading the stock chart.</b> It is a running sum of domestic dispatches minus registrations from an assumed opening stock, so definitional gaps accumulate: read the swings and direction more than the level. High and low flags compare each month with the trailing six-month average. Tata Motors figures before Oct 2025 are the passenger-vehicle line of the pre-demerger company. The seasonality, YoY and December sections are written around the latest month as the month in progress.`;
+  chart1(a);chart2(a);chart3();chart4(a,c);dispTrend();dispCharts(c);compare();capacity();
+  $("foot").innerHTML=`<b>Sources.</b> Registrations: the official VAHAN dashboard (vahan.parivahan.gov.in, Ministry of Road Transport and Highways), all-India, by maker, month by month; the page loads the latest pull every time it opens. Segments follow the dashboard's own filters: two-wheelers are the three two-wheeler vehicle categories; electric two-wheelers are those with the pure-EV or battery-operated fuel types; cars are Motor Car, Motor Cab and Maxi Cab; commercial are goods carriers, articulated vehicles and buses; three-wheelers are the three three-wheeler categories. Recent months are restated upward as late registrations sync, so the current month is conservative. Dispatches: domestic sales from each company's monthly sales filing on NSE, Apr 2025 onward. Honda, Kia, Toyota, Suzuki Motorcycle and TVS three-wheelers are left out of the dispatch charts; their registrations still appear. Mahindra commercial dispatches are its LCV lines (under 2T and 2-3.5T). <b>Capacity.</b> Capacity figures and the constraint statements are taken from each company\'s annual report, investor presentation or earnings-call transcript filed on NSE; the table lists the document, filing date and PDF page for every one. They are management statements and differ in what they count, so treat utilisation as a guide. Output is total dispatches or production from NSE sales filings; Vahan registrations stand in for Ather and Ola Electric. <b>Reading the stock chart.</b> It is a running sum of domestic dispatches minus registrations from an assumed opening stock, so definitional gaps accumulate: read the swings and direction more than the level. High and low flags compare each month with the trailing six-month average. Tata Motors figures before Oct 2025 are the passenger-vehicle line of the pre-demerger company. The seasonality, YoY and December sections are written around the latest month as the month in progress.`;
 }
 
 function kpis(a,raw,c){
@@ -326,6 +344,47 @@ function dispTrend(){
   mk("g2",{type:"bar",data:{labels:idx.map(i=>lab[i]),datasets:[{data:yo,backgroundColor:yo.map(sc),borderRadius:3,maxBarThickness:46}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},plugins:{legend:{display:false},tooltip:{callbacks:{label:x=>" "+pct(x.parsed.y),afterBody:x=>{const i=idx[x[0].dataIndex];return names.map(nm=>` ${nm}: ${pct((D0[nm].d[i]/D0[nm].d[i-12]-1)*100,0)}`)}}}},scales:{x:axx({autoSkip:false}),y:ax({ticks:{color:T.t,maxTicksLimit:6,callback:v=>v+"%"}})}},plugins:[zeroLine,pl]});
   const last=n-1,pk=shown.indexOf(Math.max(...shown));
   $("r7").innerHTML=`<b>${sel||"Listed companies"}:</b> <b>${fmt(shown[last])}</b> dispatched domestically in ${lab[last]}, ${pct(yo[yo.length-1],0)} on a year earlier; best month in the window ${lab[pk]} at ${fmt(shown[pk])}. Dispatches are domestic only; exports are excluded.`;
+}
+
+// capacity versus output: official capacity statements (data/capacity.json) against monthly output (data/output.json)
+function capRows(){
+  if(!CAP||!OUTP)return [];
+  return CAP.companies.map(c=>{
+    let out=null,months=OUTP.months;
+    if(c.output){
+      if(c.output.startsWith("registrations:")){const [,sg,nm]=c.output.split(":");out=months.map(m=>{const i=M.indexOf(m);return i>=0?DATA[sg][nm][i]:null})}
+      else out=OUTP.series[c.output]||null;
+    }
+    const capM=months.map(m=>{let v=null;(c.history||[]).forEach(h=>{if(h.from<=m)v=h.per_year});return v==null?null:v/12});
+    if(!out||!c.history.length)return Object.assign({},c,{months,out:null,capM:null});
+    const ut=months.map((_,i)=>out[i]!=null&&capM[i]?out[i]/capM[i]*100:null);
+    const n=months.length,avg3=(()=>{let o=0,k=0;for(let i=n-3;i<n;i++){if(out[i]!=null&&capM[i]){o+=out[i];k+=capM[i]}}return k?o/k*100:null})();
+    let best=-1;ut.forEach((u,i)=>{if(u!=null&&(best<0||u>ut[best]))best=i});
+    return Object.assign({},c,{months,out,capM,ut,avg3,bestU:ut[best],bestM:months[best],last:ut[n-1]});
+  });
+}
+const utColor=v=>v==null?"#b9b8b0":v>=100?"#e34948":v>=90?"#eda100":v>=75?"#2a78d6":"#b9b8b0";
+const utWord=v=>v==null?"No figure":v>=100?"At or above stated capacity":v>=90?"Tight":v>=75?"Some room":"Plenty of room";
+const viewColor={"Constrained":"#e34948","Expanding":"#eda100","No constraint stated":"#2a78d6","Demand-limited":"#0aa3b8","Not disclosed":"#898781"};
+function capacity(){
+  const rows=capRows();
+  if(!CAP||!OUTP){$("capnote").textContent="Capacity data is not available.";["k1","k2"].forEach(kill);return}
+  $("capnote").textContent=CAP.how_to_read;
+  const num=rows.filter(r=>r.avg3!=null).sort((a,b)=>b.avg3-a.avg3);
+  legend("lgcap",[["100%+ at or above stated capacity","#e34948"],["90-100% tight","#eda100"],["75-90% some room","#2a78d6"],["under 75% plenty of room","#b9b8b0"]]);
+  const ref={id:"ref100",afterDraw(ch){const x=ch.scales.x.getPixelForValue(100),a=ch.chartArea,c=ch.ctx;c.save();c.strokeStyle=T.fg;c.setLineDash([4,4]);c.beginPath();c.moveTo(x,a.top);c.lineTo(x,a.bottom);c.stroke();c.restore()}};
+  mk("k1",{type:"bar",data:{labels:num.map(r=>r.name),datasets:[{label:"Last 3 months",data:num.map(r=>r.avg3),backgroundColor:num.map(r=>utColor(r.avg3)),borderRadius:3,maxBarThickness:20},{label:"Best month",data:num.map(r=>r.bestU),backgroundColor:num.map(r=>utColor(r.bestU)+"66"),borderRadius:3,maxBarThickness:20}]},options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:x=>` ${x.dataset.label}: ${x.parsed.x.toFixed(0)}%`}}},scales:{x:ax({min:0,suggestedMax:125,ticks:{color:T.t,callback:v=>v+"%"}}),y:{grid:{display:false},ticks:{color:T.t}}}},plugins:[ref]});
+  const sel=$("capSel");
+  if(!sel.options.length){sel.innerHTML=num.map(r=>`<option value="${r.name}">${r.name}</option>`).join("");const pre=num.find(r=>r.name===st.oem||r.name.startsWith(st.oem));sel.value=pre?pre.name:num[0].name;sel.onchange=()=>capacity()}
+  const r=rows.find(x=>x.name===sel.value)||num[0];
+  const lab=r.months.map(m=>{const [y,mo]=m.split("-");return MN[mo-1]+" "+y.slice(2)});
+  $("k2t").textContent=r.name+": "+r.output_kind+" against capacity per month";
+  const pl={id:"pl2",afterDatasetsDraw(ch){const b=ch.getDatasetMeta(0).data[r.months.length-1],c=ch.ctx;if(b&&r.last!=null)pill(c,r.last.toFixed(0)+"% of capacity",b.x-40,b.y-8,utColor(r.last))}};
+  mk("k2",{data:{labels:lab,datasets:[{type:"bar",label:"Output",data:r.out,backgroundColor:colOf(r.name.replace(" (SUVs)","")),borderRadius:2,maxBarThickness:26,order:2},{type:"line",label:"Capacity per month",data:r.capM,borderColor:VIO,borderDash:[6,4],borderWidth:2.2,pointRadius:0,stepped:true,spanGaps:false,order:1}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},interaction:{mode:"index",intersect:false},plugins:{legend:{display:true,position:"top",labels:{boxWidth:10,color:T.t}},tooltip:{callbacks:{label:x=>` ${x.dataset.label}: ${fl(x.parsed.y)}`,afterBody:x=>{const u=r.ut[x[0].dataIndex];return u==null?"":` ${u.toFixed(0)}% of capacity`}}}},scales:{x:axr(),y:ax({beginAtZero:true,ticks:{color:T.t,maxTicksLimit:7,callback:v=>fmt(v)}})}},plugins:[pl]});
+  const nowCap=c=>{const h=c.history&&c.history.length?c.history[c.history.length-1]:null;return h?h.per_year:null};
+  const link=sx=>`<span class="src"><a href="${sx.url}" target="_blank" rel="noopener">${sx.doc}</a> · filed ${sx.filed} · PDF page ${sx.page}</span>`;
+  $("captbl").innerHTML=`<table><thead><tr><th>Company</th><th>Capacity now</th><th>What it counts</th><th>Last 3 months</th><th>Management view</th><th>What they said</th><th>Official sources</th></tr></thead><tbody>${rows.map(c=>{const cp=nowCap(c);const h=c.history&&c.history.length?c.history[c.history.length-1]:null;
+   return `<tr><td><b>${c.name}</b></td><td class="n">${cp?fmt(cp)+" a year<br>("+fmt(cp/12)+" a month)":"not found"}${h&&h.note?`<br><span style="color:var(--mut)">${h.note}</span>`:""}${c.planned?`<br><span style="color:var(--mut)">Plan: ${c.planned}</span>`:""}</td><td>${c.measure}</td><td class="n">${c.avg3!=null?`<span class="pillv" style="background:${utColor(c.avg3)}">${c.avg3.toFixed(0)}%</span><br>${utWord(c.avg3)}`:"n/a"}</td><td><span class="pillv" style="background:${viewColor[c.view]||"#898781"}">${c.view}</span></td><td>${(c.evidence||[]).map(e=>`${e.text} <span style="color:var(--mut)">(p. ${e.page})</span>`).join("<br>")||"-"}</td><td>${(c.sources||[]).map(link).join("")||"none found"}</td></tr>`}).join("")}</tbody></table>`;
 }
 
 // 5 and 6. dispatch charts
@@ -434,7 +493,9 @@ function compare(){
 function fetchedText(){if(!FETCHED)return "just now";const t=new Date(FETCHED);return isNaN(t)?FETCHED:t.toLocaleString([],{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}
 async function loadData(){
   const q="?t="+Date.now();
-  const [r,d]=await Promise.all([fetch("data/registrations.json"+q).then(x=>{if(!x.ok)throw new Error("registrations "+x.status);return x.json()}),fetch("data/dispatch.json"+q).then(x=>{if(!x.ok)throw new Error("dispatch "+x.status);return x.json()})]);
+  const opt=u=>fetch(u+q).then(x=>x.ok?x.json():null).catch(()=>null);
+  const [r,d,cap,outp]=await Promise.all([fetch("data/registrations.json"+q).then(x=>{if(!x.ok)throw new Error("registrations "+x.status);return x.json()}),fetch("data/dispatch.json"+q).then(x=>{if(!x.ok)throw new Error("dispatch "+x.status);return x.json()}),opt("data/capacity.json"),opt("data/output.json")]);
+  CAP=cap;OUTP=outp;
   AS_OF=r.as_of;FETCHED=r.fetched||"";BUILT=r.built||"";
   const {as_of,fetched,built,...rest}=r;DATA=rest;M=DATA.months;DISP=d.DISP;DM=d.months;epoch();
 }

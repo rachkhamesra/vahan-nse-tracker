@@ -1,0 +1,427 @@
+{
+ "updated": "2026-11-28",
+ "how_to_read": "Capacity figures are management statements and differ in what they count (annual or monthly, installed or operational, one product or several). Output is each company's total dispatches or production from NSE filings, or Vahan registrations where noted. Utilisation = monthly output divided by one twelfth of the annual capacity in force that month, so a rising capacity makes earlier months look busier than they were. Where output runs above stated capacity, the stated figure is usually out of date.",
+ "companies": [
+  {
+   "name": "Maruti Suzuki",
+   "segment": "CAR",
+   "output": "Maruti Suzuki",
+   "output_kind": "production",
+   "measure": "Installed manufacturing capacity, passenger and light commercial vehicles",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 2400000,
+     "note": "Installed capacity in FY26, against actual production of 2,347,792"
+    },
+    {
+     "from": "2026-08",
+     "per_year": 2900000,
+     "note": "Total installed capacity as of 30 July 2026"
+    }
+   ],
+   "planned": "3.65 million by FY31; medium-term goal 4 million",
+   "view": "Constrained",
+   "evidence": [
+    {
+     "text": "Operated at nearly full capacity utilisation in the second half of FY26; about 190,000 orders were pending at March 2026 because of limited capacity.",
+     "page": "144, 145, 37"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Annual Integrated Report 2025-26 (installed capacity table)",
+     "filed": "2026-08-08",
+     "page": "228",
+     "url": "https://nsearchives.nseindia.in/corporate/MARUTIASHISH_08082026211830_STxIntimation_AGMNotice_AR2026_8Aug2026.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Annual Integrated Report 2025-26 (2.9 mn as of 30 Jul 2026; pending orders)",
+     "filed": "2026-08-08",
+     "page": "23, 38, 144, 145",
+     "url": "https://nsearchives.nseindia.in/corporate/MARUTIASHISH_08082026211830_STxIntimation_AGMNotice_AR2026_8Aug2026.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Hero MotoCorp",
+   "segment": "2W",
+   "output": "Hero MotoCorp",
+   "output_kind": "total dispatches",
+   "measure": "Annual production capacity across 8 plants",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 8630000,
+     "note": "FY26 capacity"
+    }
+   ],
+   "planned": "9.2 million units by March 2027",
+   "view": "Expanding",
+   "evidence": [
+    {
+     "text": "EV capacity raised to 30,000 a month and being taken to 45,000 in Q4; ICE scooter capacity doubled to 80,000 a month.",
+     "page": "4, 5, 7"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Q2 FY27 investor presentation",
+     "filed": "2026-10-28",
+     "page": "4, 16",
+     "url": "https://nsearchives.nseindia.in/corporate/HEROMOTO_28102026200642_Stxintimationpresentation28102026.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Annual Report FY26",
+     "filed": "2026-07-10",
+     "page": "42, 55",
+     "url": "https://nsearchives.nseindia.in/corporate/HEROMOTO_10072026215740_Stxintimationagmnotice.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q2 FY27 earnings call transcript",
+     "filed": "2026-11-03",
+     "page": "4, 5, 7",
+     "url": "https://nsearchives.nseindia.in/corporate/HEROMOTO_03112026134115_Stxintimationtranscript03112026.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Bajaj",
+   "segment": "2W",
+   "output": "Bajaj",
+   "output_kind": "total sales",
+   "measure": "Overall monthly capacity across the businesses (two-wheelers, three-wheelers)",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 7500000,
+     "note": "625,000 units a month, as stated in October 2026"
+    }
+   ],
+   "planned": "775,000 units a month over the next 6 to 9 months",
+   "view": "Constrained",
+   "evidence": [
+    {
+     "text": "Management said capacities are being challenged in EVs, high-end bikes and some three-wheeler sub-segments.",
+     "page": "7"
+    },
+    {
+     "text": "EV capacity is about 60,000 a month but only 40,000 shipped in September after a supply-chain miss.",
+     "page": "5, 20"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Q2 FY27 earnings call transcript",
+     "filed": "2026-11-02",
+     "page": "7",
+     "url": "https://nsearchives.nseindia.in/corporate/lkwalimbe_bajajauto_co_in_02112026165236_Transcript_of_Earning_Conference_Call_Q2_FY27.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q1 FY27 earnings call transcript (about 7 mn a year, expanding to 9 mn)",
+     "filed": "2026-07-27",
+     "page": "6",
+     "url": "https://nsearchives.nseindia.in/corporate/lkwalimbe_bajajauto_co_in_27072026164331_Transcript_of_Earning_Conference_Call_Q1_FY27.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "TVS",
+   "segment": "2W",
+   "output": "TVS",
+   "output_kind": "two-wheeler sales",
+   "measure": "Two-wheeler capacity (three-wheeler capacity is separate and not counted)",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 6800000,
+     "note": "About 6.8 million as stated in July 2026"
+    }
+   ],
+   "planned": "8.3 million; in November said it will cross 8 million and must plan more for next year",
+   "view": "Expanding",
+   "evidence": [
+    {
+     "text": "Output has run above the stated 6.8 million a year, so the figure is likely stale. The company said in November it would cross 8 million two-wheeler capacity.",
+     "page": "14"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Q1 FY27 earnings call transcript",
+     "filed": "2026-07-28",
+     "page": "12",
+     "url": "https://nsearchives.nseindia.in/corporate/TVSMOTOR_28072026141905_NSEBSEAnalystcallTranscript_sd.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q2 FY27 earnings call transcript",
+     "filed": "2026-11-04",
+     "page": "14",
+     "url": "https://nsearchives.nseindia.in/corporate/TVSMOTOR_04112026174008_NSEBSEInvestorcalltranscript.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Royal Enfield",
+   "segment": "2W",
+   "output": "Royal Enfield",
+   "output_kind": "total sales",
+   "measure": "Motorcycle manufacturing capacity",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 1460000,
+     "note": "14.6 lakh across four units (FY26)"
+    },
+    {
+     "from": "2026-04",
+     "per_year": 1500000,
+     "note": "About 1.5 million at the start of FY27"
+    },
+    {
+     "from": "2026-10",
+     "per_year": 1650000,
+     "note": "About 1.65 million after Cheyyar module 1 began in Q2 FY27"
+    }
+   ],
+   "planned": "2 million by FY28; 2.5 million with the Andhra Pradesh plant by FY30",
+   "view": "Constrained",
+   "evidence": [
+    {
+     "text": "Capacity utilisation was 90% in FY26, up from 84% in FY25.",
+     "page": "61 (annual report)"
+    },
+    {
+     "text": "Bookings for a new Himalayan 411 variant were stopped after 17 days because there was no capacity; module 2 is being brought forward.",
+     "page": "13"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Annual Report FY26 (capacity, utilisation, production)",
+     "filed": "2026-07-25",
+     "page": "61, 17",
+     "url": "https://nsearchives.nseindia.in/corporate/EICHERMOT_25072026154348_EMLIntimationofAnnualreport2026Signed.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q2 FY27 earnings call transcript (1.5 mn to 1.65 mn)",
+     "filed": "2026-11-17",
+     "page": "8, 9, 13",
+     "url": "https://nsearchives.nseindia.in/corporate/EICHERMOT_17112026181815_EMLTranscriptofConferencecallNov132026Signed.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Hyundai",
+   "segment": "CAR",
+   "output": "Hyundai",
+   "output_kind": "total sales",
+   "measure": "Annual installed production capacity (Chennai 824,000 plus Pune 170,000)",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 994000,
+     "note": "FY26 installed capacity"
+    }
+   ],
+   "planned": "Pune to be scaled from 170,000 to 320,000 in phases",
+   "view": "No constraint stated",
+   "evidence": [
+    {
+     "text": "The annual report gives the capacity and the Pune expansion plan but does not describe a capacity constraint.",
+     "page": "39, 48"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Annual Report 2025-26",
+     "filed": "2026-08-03",
+     "page": "48, 39, 57",
+     "url": "https://nsearchives.nseindia.in/corporate/HMILNSE_03082026181459_AnnualReportHMIL2026.pdf",
+     "role": "capacity"
+    }
+   ]
+  },
+  {
+   "name": "Mahindra (SUVs)",
+   "segment": "CAR",
+   "output": "Mahindra (SUVs)",
+   "output_kind": "utility vehicle sales",
+   "measure": "Operational capacity for ICE and electric SUVs",
+   "history": [
+    {
+     "from": "2026-04",
+     "per_year": 774000,
+     "note": "64,500 a month at the end of FY26"
+    },
+    {
+     "from": "2026-09",
+     "per_year": 816000,
+     "note": "68,000 a month from September 2026 (60,000 ICE plus 8,000 EV)"
+    }
+   ],
+   "planned": "82,000 a month by the end of FY27, then 92,000",
+   "view": "Constrained",
+   "evidence": [
+    {
+     "text": "Electric SUV sales were held back by a capacity limit of 8,000 a month, to rise by 4,000 around February to March.",
+     "page": "7 (Q2 call)"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Annual Report FY26",
+     "filed": "2026-07-04",
+     "page": "16",
+     "url": "https://nsearchives.nseindia.in/corporate/Pooja_04072026173235_Annual_Report_SE__signed.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q1 FY27 earnings call transcript (68,000 by September; 82,000 by year end)",
+     "filed": "2026-08-04",
+     "page": "8",
+     "url": "https://nsearchives.nseindia.in/corporate/AmitDodani_04082026194302_IntimationofTranscriptofearningcallQ1F27.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q2 FY27 earnings call transcript",
+     "filed": "2026-11-11",
+     "page": "7",
+     "url": "https://nsearchives.nseindia.in/corporate/AmitDodani_11112026185839_Intimation_Transcript_Q2F27_Earningscall_05112026.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Ather",
+   "segment": "E2W",
+   "output": "registrations:E2W:Ather",
+   "output_kind": "Vahan registrations (proxy)",
+   "measure": "Hosur plant capacity",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 420000,
+     "note": "35,000 a month, as stated in May 2026"
+    }
+   ],
+   "planned": "Factory 3.0 at AURIC adds 42,000 a month from Q3 FY27; 10 lakh a year in total when both phases are done",
+   "view": "Constrained",
+   "evidence": [
+    {
+     "text": "Running at 90 to 95% of the 35,000 a month capacity for several months, 'at the edge'.",
+     "page": "14"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Q4 FY26 earnings call transcript",
+     "filed": "2026-05-08",
+     "page": "14",
+     "url": "https://nsearchives.nseindia.in/corporate/ATHERENERGY_08052026151113_TofileQ4FY26Transcript.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q4 FY26 investor presentation (Factory 3.0)",
+     "filed": "2026-05-04",
+     "page": "4, 28",
+     "url": "https://nsearchives.nseindia.in/corporate/ATHERENERGY_04052026143137_TouploadInvestorppt.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Ola Electric",
+   "segment": "E2W",
+   "output": "registrations:E2W:Ola Electric",
+   "output_kind": "Vahan registrations (proxy)",
+   "measure": "Futurefactory installed production capacity",
+   "history": [
+    {
+     "from": "2025-04",
+     "per_year": 1000000,
+     "note": "1 million electric two-wheelers a year"
+    }
+   ],
+   "planned": "Modular design for higher scale",
+   "view": "Demand-limited",
+   "evidence": [
+    {
+     "text": "In August the company said supply of one variant was held back by a battery-cell shortage, not by plant capacity.",
+     "page": "12 (Q1 call)"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Annual Report FY26",
+     "filed": "2026-09-08",
+     "page": "7",
+     "url": "https://nsearchives.nseindia.in/corporate/OLAELECTRIC_08092026222531_Ola_SE_AGM_Notice_Intimation_Notice__1_.pdf",
+     "role": "capacity"
+    },
+    {
+     "doc": "Q1 FY27 earnings call transcript",
+     "filed": "2026-08-13",
+     "page": "12",
+     "url": "https://nsearchives.nseindia.in/corporate/OLAELECTRIC_13082026233152_Intimation_Transcript_Earnings_Conference.pdf",
+     "role": "evidence"
+    }
+   ]
+  },
+  {
+   "name": "Tata Motors (PV)",
+   "segment": "CAR",
+   "output": null,
+   "output_kind": "",
+   "measure": "No total installed capacity figure found in the documents reviewed",
+   "history": [],
+   "planned": "New Panapakkam plant: 250,000 vehicles a year at full build-out over 5 to 7 years",
+   "view": "Constrained",
+   "evidence": [
+    {
+     "text": "Said demand remains ahead of current capacity for EVs (about 16,000 a month) and that it is working to scale Sierra capacity.",
+     "page": "3, 4"
+    }
+   ],
+   "sources": [
+    {
+     "doc": "Q2 FY27 earnings call transcript",
+     "filed": "2026-11-19",
+     "page": "3, 4",
+     "url": "https://nsearchives.nseindia.in/corporate/TATAMOTORSSJS_19112026202307_NSEBSETranscriptQ2FY27.pdf",
+     "role": "evidence"
+    },
+    {
+     "doc": "Annual Report FY26 (Panapakkam plant)",
+     "filed": "2026-06-15",
+     "page": "56",
+     "url": "https://nsearchives.nseindia.in/corporate/TATAMOTORSSJS_15062026220635_NSEBSEAnnualReport.pdf",
+     "role": "capacity"
+    }
+   ]
+  },
+  {
+   "name": "Ashok Leyland / VECV / Tata Motors (CV)",
+   "segment": "CV",
+   "output": null,
+   "output_kind": "",
+   "measure": "No capacity figure found in the annual report, investor presentations or call transcripts reviewed",
+   "history": [],
+   "planned": "",
+   "view": "Not disclosed",
+   "evidence": [],
+   "sources": []
+  }
+ ]
+}
